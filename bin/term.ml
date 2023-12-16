@@ -43,8 +43,11 @@ type input_response =
   | Gotline
 
 let input_feed_byte (b: int) : input_response = match b with 
+  (* ignore \n and handle \r instead *)
   | 10 -> Ok
+  (* \r *)
   | 13 -> input_add_char '\n'; Gotline
+  (* backspace *)
   | 127 -> input_remove_char (); input_hide (); input_show (); Ok
   | _ -> input_add_char (Char.chr b); input_latest (); Ok
 
