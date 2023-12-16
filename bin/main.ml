@@ -3,15 +3,19 @@ let respond_peer_or_stdin (ic: in_channel) (oc: out_channel) =
   let read_fs = [fd; Unix.stdin;] in
   let acknowledgement = "message received" in
   let sent_time = ref 0.0 in
+  let buffer = Bytes.create 1024 in
   while true do
     let (ready, _, _) = Unix.select read_fs [] [] (-1.0) in
     List.iter 
       (fun ready -> 
         if ready = Unix.stdin then begin
-          let line = read_line () ^ "\n" in
-          output_string oc line;
-          flush oc;
-          sent_time := Sys.time ();
+          let n_read = input stdin buffer 0 1024 in
+          for i = 0 to n_read - 1 do 
+            let b = Bytes.get_uint8 buffer i in
+            match Term.input_feed_byte b with
+            | Ok -> ()
+            | Gotline -> Term.input_to_oc oc; Term.input_clear (); sent_time := Sys.time ()
+          done;
         end
         else if ready = fd then begin
           let line = input_line ic in
@@ -23,7 +27,9 @@ let respond_peer_or_stdin (ic: in_channel) (oc: out_channel) =
             let ack = acknowledgement ^ "\n" in
             output_string oc ack;
             flush oc;
-            print_endline line
+            Term.input_hide ();
+            print_endline line;
+            Term.input_show ();
           end
         end
     ) ready;
@@ -31,7 +37,7 @@ let respond_peer_or_stdin (ic: in_channel) (oc: out_channel) =
 
 let sockaddr_to_string sockaddr = match sockaddr with
   | Unix.ADDR_UNIX s -> s
-  | Unix.ADDR_INET (host, port) -> Unix.string_of_inet_addr host ^ string_of_int port
+  | Unix.ADDR_INET (host, port) -> Unix.string_of_inet_addr host ^ ":" ^ string_of_int port
 
 let client_handle_connection (ic: in_channel) (oc: out_channel) =
   let fd = Unix.descr_of_in_channel ic in
@@ -75,12 +81,15 @@ let () =
 
   let () = Arg.parse spec do_nothing_with_string usage_msg in
 
+  Term.enter_raw_mode ();
+
   let socket = Unix.socket PF_INET SOCK_STREAM 0 in
   let addr = try Unix.inet_addr_of_string !host with
     err -> 
       Printf.printf "[ERROR] failed to convert '%s' to inet_addr\n" !host;
       Unix.close socket; raise err in
   let sockaddr = Unix.ADDR_INET (addr, !port) in
+
   if !mode = Server then begin
     print_endline ("[INFO] starting server on " ^ sockaddr_to_string (sockaddr));
     Unix.establish_server server_handle_connection sockaddr
