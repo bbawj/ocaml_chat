@@ -2,6 +2,7 @@ let respond_peer_or_stdin (ic: in_channel) (oc: out_channel) =
   let fd = Unix.descr_of_in_channel ic in
   let read_fs = [fd; Unix.stdin;] in
   let acknowledgement = "message received" in
+  let token = String.hash acknowledgement in
   let sent_time = ref 0.0 in
   let buffer = Bytes.create 1024 in
   while true do
@@ -14,17 +15,17 @@ let respond_peer_or_stdin (ic: in_channel) (oc: out_channel) =
             let b = Bytes.get_uint8 buffer i in
             match Term.input_feed_byte b with
             | Ok -> ()
-            | Gotline -> Term.input_to_oc oc; Term.input_clear (); sent_time := Sys.time ()
+            | Gotline -> Term.input_to_oc oc; Term.input_hide (); Term.input_show (); Term.input_clear (); sent_time := Sys.time ()
           done;
         end
         else if ready = fd then begin
           let line = input_line ic in
-          if line = acknowledgement then begin
+          if int_of_string_opt line = Some(token) then begin
             let rtt: float = Float.min (Sys.time()) !sent_time in
             print_endline (acknowledgement ^ " rtt=" ^ Float.to_string rtt);
           end
           else begin
-            let ack = acknowledgement ^ "\n" in
+            let ack = Int.to_string token ^ "\n" in
             output_string oc ack;
             flush oc;
             Term.input_hide ();
